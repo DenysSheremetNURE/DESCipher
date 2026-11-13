@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace DESCipher;
+﻿namespace DESCipher;
 
 public static class DESTables
 {

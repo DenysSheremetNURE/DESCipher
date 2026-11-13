@@ -14,4 +14,12 @@ byte[] encrypted = DESTools.Encrypt(Encoding.UTF8.GetBytes(text), key);
 Console.WriteLine($"Encrypted (hex): {Convert.ToHexString(encrypted)}");
 
 byte[] decrypted = DESTools.Decrypt(encrypted, key);
-Console.WriteLine($"Decrypted:      {Encoding.UTF8.GetString(decrypted)}");
+Console.WriteLine($"Decrypted: {Encoding.UTF8.GetString(decrypted)}");
+
+Console.WriteLine(DESTools.IsWeakKey(Convert.FromHexString("0101010101010101")));     // True
+Console.WriteLine(DESTools.IsSemiWeakKey(Convert.FromHexString("01FE01FE01FE01FE"))); // True
+Console.WriteLine(DESTools.IsWeakKey(Encoding.ASCII.GetBytes("secret12")));           // False
+
+double[] h = DESTools.CalculateRoundEntropy(Encoding.UTF8.GetBytes(text), key);
+for (int i = 0; i < h.Length; i++)
+    Console.WriteLine($"Round {i,2}: {h[i]:F3}");

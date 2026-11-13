@@ -9,6 +9,7 @@ public static class DESTools
     public static byte[] Encrypt(byte[] rawData, byte[] key)
     {
         bool[][] roundKeys = GenerateRoundKeys(key);
+        EnsureKeyIsStrong(roundKeys);
         byte[] data = AddPadding(rawData);
         byte[] result = new byte[data.Length];
 
@@ -28,6 +29,7 @@ public static class DESTools
             throw new ArgumentException("Encrypted data length must be a non-zero multiple of 8");
 
         bool[][] roundKeys = GenerateRoundKeys(key);
+        EnsureKeyIsStrong(roundKeys);
         byte[] result = new byte[encryptedData.Length];
 
         for (int offset = 0; offset < encryptedData.Length; offset += 8)
@@ -43,7 +45,7 @@ public static class DESTools
     private static byte[] EncryptBlock(byte[] block, bool[][] roundKeys) => ProcessBlock(block, roundKeys);
     private static byte[] DecryptBlock(byte[] block, bool[][] roundKeys) => ProcessBlock(block, roundKeys.Reverse().ToArray());
 
-    private static byte[] ProcessBlock(byte[] block, bool[][] roundKeys)
+    private static byte[] ProcessBlock(byte[] block, bool[][] roundKeys, List<bool[]>? trace = null)
     {
         if (block.Length != 8)
             throw new ArgumentException($"The block {Convert.ToHexString(block)} is not 64 bits long");
@@ -54,11 +56,14 @@ public static class DESTools
         bool[] l = permutedBlock[..32];
         bool[] r = permutedBlock[32..];
 
+        trace?.Add(l.Concat(r).ToArray());
+
         for (int i = 0; i < 16; i++)
         {
             bool[] newR = Xor(l, F(r, roundKeys[i]));
             l = r;
             r = newR;
+            trace?.Add(l.Concat(r).ToArray());
         }
 
         bool[] mixedBlock = r.Concat(l).ToArray();
@@ -239,5 +244,69 @@ public static class DESTools
                 throw new ArgumentException("Wrong key or corrupted data");
 
         return data[..^padLength];
+    }
+
+    // Checks
+
+    public static bool IsWeakKey(byte[] key) => CountDistinctRoundKeys(GenerateRoundKeys(key)) == 1;
+
+    public static bool IsSemiWeakKey(byte[] key) => CountDistinctRoundKeys(GenerateRoundKeys(key)) == 2;
+
+    private static int CountDistinctRoundKeys(bool[][] roundKeys)
+    {
+        var unique = new HashSet<string>();
+        foreach (bool[] k in roundKeys)
+            unique.Add(string.Concat(k.Select(b => b ? '1' : '0')));
+        return unique.Count;
+    }
+
+    private static void EnsureKeyIsStrong(bool[][] roundKeys)
+    {
+        int distinct = CountDistinctRoundKeys(roundKeys);
+        if (distinct == 1)
+            throw new ArgumentException("Weak key: all 16 round keys are identical");
+        if (distinct == 2)
+            throw new ArgumentException("Semi-weak key: only 2 different round keys");
+    }
+
+    public static double[] CalculateRoundEntropy(byte[] rawData, byte[] key)
+    {
+        bool[][] roundKeys = GenerateRoundKeys(key);
+        byte[] data = AddPadding(rawData);
+
+        var stateBytes = new List<byte>[17];
+        for (int i = 0; i < 17; i++)
+            stateBytes[i] = new List<byte>();
+
+        for (int offset = 0; offset < data.Length; offset += 8)
+        {
+            var trace = new List<bool[]>();
+            ProcessBlock(data[offset..(offset + 8)], roundKeys, trace);
+
+            for (int i = 0; i < 17; i++)
+                stateBytes[i].AddRange(BitsToBytes(trace[i]));
+        }
+
+        double[] entropy = new double[17];
+        for (int i = 0; i < 17; i++)
+            entropy[i] = Entropy(stateBytes[i].ToArray());
+
+        return entropy;
+    }
+
+    public static double Entropy(byte[] data)
+    {
+        int[] counts = new int[256];
+        foreach (byte b in data)
+            counts[b]++;
+
+        double h = 0;
+        foreach (int count in counts)
+        {
+            if (count == 0) continue;
+            double p = (double)count / data.Length;
+            h -= p * Math.Log2(p);
+        }
+        return h;
     }
 }
